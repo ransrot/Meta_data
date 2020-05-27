@@ -3,14 +3,17 @@ import argparse
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 import os
+import subprocess
+from fractions import Fraction
 
 
 class Parser:
 	def __init__(self):
 		self.args = argparse.ArgumentParser()
-		self.args.add_argument("--image", help="Image you want to check the metadata on", type=self.validate_image, required=True)
-		self.args.add_argument("--meta", help="Show the metadata of the image", action='store_true')
-		self.args.add_argument("--clear", help="Clear all metadata in the image", action='store_true')
+		self.args.add_argument("--image", "-i", help="Image you want to check the metadata on", type=self.validate_image, required=True)
+		self.args.add_argument("--meta", "-m", help="Show the metadata of the image", action='store_true')
+		self.args.add_argument("--clear", "-c", help="Clear all metadata in the image", action='store_true')
+		self.args.add_argument("--set", "-s", help="Set meta values to tags", action='store_true')
 
 		self.parse_args = self.args.parse_args()
 
@@ -89,13 +92,88 @@ class Meta(Parser):
 			count += 1
 		print("[+] Metadata deleted")
 
+	def change_value_of_meta(self, value, value_type):
+		if value_type == "[Rational]":
+			if "/" not in value:
+				print(f"[-] {value} Not a fraction")
+				exit()
+			if "," in value:
+				fraction_list = []
+				value = value.split(",")
+				if len(value) > 3:
+					print("[-] Value too long")
+					exit()
+				else:
+					for fractions in value:
+						fractions = fractions.split("/")
+						fraction_list.append(Fraction(int(fractions[0]), int(fractions[1])))
+					return fraction_list
+			value = value.split("/")
+			return Fraction(int(value[0]), int(value[1]))
+
+		elif value_type == "[String]":
+			return [value]
+
+	def set_metadata(self):
+		metadata = pyexiv2.ImageMetadata(self.image)
+		metadata.read()
+		my_value_key_list = []
+
+		try:
+			for key, value in metadata.items():
+				print(value)
+				my_value_key_list.append(value)
+		except Exception:
+			pass
+
+		while True:
+			print("\n[+] Select the tag you want to change. (e.g Exif.GPSInfo.GPSLatitude). exit() to exit or view to view the options to change again")
+			
+			dict_value = input(">> ")
+
+			if dict_value == "exit()":
+				print("[+] Exiting")
+				exit()
+
+			elif dict_value == "view":
+				for letters in my_value_key_list:
+					print(letters)
+				continue
+
+			elif dict_value == "clear":
+				subprocess.call("clear", shell=True)
+				continue
+
+			try:
+				key = metadata.__getitem__(dict_value)
+			except KeyError:
+				print("[-] Invalid Key")
+				continue
+
+			print(f"[+] Changing value for {key}")
+
+			try:
+				value = input(">> ")
+				key = str(key).split()[1]
+				value = self.change_value_of_meta(value, key)
+
+				metadata.__setitem__(dict_value, value)
+				metadata.write()
+				new_value = metadata.__getitem__(dict_value)
+
+				print(f"[+] New value {new_value}")
+			except pyexiv2.exif.ExifValueError as e:
+				print(str(e))
+
+
 
 
 def main():
 	return {
 		"image": {
 			"clear": Meta().clear_metadata,
-			"meta": Meta().print_metadata
+			"meta": Meta().print_metadata,
+			"set": Meta().set_metadata
 		}
 	}
 
@@ -108,8 +186,10 @@ if __name__ == '__main__':
 		print("[-] Specify an argument.")
 		exit()
 
+	#Meta().set_metadata()
+
 	try:
 		get_main[get_dict[0]][get_dict[1]]()
 	except IndexError:
-		print("[-] Specify a sub argument. (--clear, --meta)")
+		print("[-] Specify a sub argument. (--clear, --meta, --set)")
 		exit()
