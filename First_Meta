@@ -1,1 +1,115 @@
+import pyexiv2
+import argparse
+from PIL import Image
+from PIL.ExifTags import TAGS, GPSTAGS
+import os
 
+
+class Parser:
+	def __init__(self):
+		self.args = argparse.ArgumentParser()
+		self.args.add_argument("--image", help="Image you want to check the metadata on", type=self.validate_image, required=True)
+		self.args.add_argument("--meta", help="Show the metadata of the image", action='store_true')
+		self.args.add_argument("--clear", help="Clear all metadata in the image", action='store_true')
+
+		self.parse_args = self.args.parse_args()
+
+	def return_dict_parser(self):
+		get_dict = vars(self.parse_args)
+		return [k for k,v in get_dict.items() if v]
+
+	def validate_image(self, image):
+		if not os.path.exists(image):
+			print("[-] Invalid image")
+			exit()
+		return os.path.abspath(image)
+
+
+class Meta(Parser):
+	def __init__(self):
+		super().__init__()
+		self.image = self.parse_args.image
+		self.argument_list = []
+
+	def extract_metadata(self):
+		img = Image.open(self.image)
+		if not img._getexif():
+			print("[-] No meta data in image")
+			return None
+		return {TAGS[k]: v for k, v in img._getexif().items()}
+
+	def print_metadata(self, print_value=True):
+		get_meta = self.extract_metadata()
+		if not get_meta:
+			exit()
+
+		if print_value:
+			for key, value in get_meta['GPSInfo'].items():
+				gps, numbers = GPSTAGS[key], value
+				if gps == "GPSLatitude":
+					lat = self.gps_calculation(numbers[0][0], numbers[1][0], numbers[2][0])
+				
+				elif gps == "GPSLongitude":
+					lon = self.gps_calculation(numbers[0][0], numbers[1][0], numbers[2][0])
+
+				print(gps, numbers)
+			print(f"\nGPS Degrees: Lat: {str(lat)}, Lon: {str(lon)}\n")
+
+		for key, value in get_meta.items():
+
+			if isinstance(value, bytes):
+				value = value.decode()
+			if key == "GPSInfo":
+				continue
+			self.argument_list.append(key)
+
+			if print_value:
+				print(key, ":", value)
+		return
+		
+
+	def gps_calculation(self, degree, minutes, seconds):
+		get_meta = self.extract_metadata()
+		return int(degree) + int(minutes / 60.0) + int(seconds / 3600) 
+
+
+	def make_arguments(self):
+		self.print_metadata(print_value=False)
+		print(self.argument_list)
+
+	def clear_metadata(self):
+		metadata = pyexiv2.ImageMetadata(self.image)
+		metadata.read()
+		count = 0
+
+		while count < 10:
+			for key in metadata.keys():
+				metadata.__delitem__(key)
+				metadata.write()
+			count += 1
+		print("[+] Metadata deleted")
+
+
+
+def main():
+	return {
+		"image": {
+			"clear": Meta().clear_metadata,
+			"meta": Meta().print_metadata
+		}
+	}
+
+
+if __name__ == '__main__':
+	get_dict = Parser().return_dict_parser()
+	get_main = main()
+
+	if not get_dict:
+		print("[-] Specify an argument.")
+		exit()
+
+	try:
+		get_main[get_dict[0]][get_dict[1]]()
+	except IndexError:
+		print("[-] Specify a sub argument. (--clear, --meta)")
+		exit()
